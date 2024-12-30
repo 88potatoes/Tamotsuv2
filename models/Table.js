@@ -228,15 +228,40 @@ var createTable_ = function () {
     },
 
     batchUpdate: function (recordOrAttributesArr) {
-      const records = [];
+      const records = [],
+        updates = [];
+      const recordMap = new Map(this.all().map(record => [record[this.idColumn], record]))
+      // validate all the rows and add them to the udpates array to be updated
       for (var i = 0; i < recordOrAttributesArr.length; i++) {
         var recordOrAttributes = recordOrAttributesArr[i];
-        var record = this.find(recordOrAttributes[this.idColumn])
+        
+        var record = recordMap.get(recordOrAttributes[this.idColumn])
+        record.setAttributes(recordOrAttributes);
         if (!record.isValid()) return false;
-        var values = this.valuesFrom(record);
-        this.rangeByRow(record.row_).setValues([values]);
+
+        updates.push({
+          row: record.row_,
+          values: this.valuesFrom(record),
+        });
         records.push(record);
       }
+      updates.sort((a, b) => a.row - b.row);
+
+      // get each contiguous chunk in the update array
+      const chunks = [];
+      let chunkStart = 0;
+      for (let i = 1; i < updates.length; i++) {
+        if (updates[i].row === updates[i - 1].row + 1) continue;
+        chunks.push(updates.slice(chunkStart, i));
+        chunkStart = i;
+      }
+      chunks.push(updates.slice(chunkStart));
+
+      // now update each chunk in the spreadsheet
+      for (const chunk of chunks) {
+        this.dataRange().offset(chunk[0].row - 1 - this.rowShift, 0, chunk.length).setValues(chunk.map(c => c.values));
+      }
+
       return records;
     },
 
